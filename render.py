@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 
 DATA_PATH = Path("data.csv")
-OUTPUT_PATH = Path("site/index.html")
+OUTPUT_PATH = Path("docs/index.html")
 
 
 def load_series(path: Path):

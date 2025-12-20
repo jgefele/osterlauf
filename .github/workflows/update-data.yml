@@ -22,19 +22,25 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0t64 libcups2t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libpango-1.0-0 libcairo2 libasound2t64
           python -m pip install --upgrade pip
-          python -m pip install beautifulsoup4
+          python -m pip install beautifulsoup4 plotly kaleido
+          plotly_get_chrome -y
 
       - name: Run scraper
         run: python scrape.py
 
+      - name: Render dashboard
+        run: python render.py
+
       - name: Commit updated data
         run: |
-          if git status --porcelain data.csv | grep -q .; then
+          if git status --porcelain data.csv site/index.html | grep -q .; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add data.csv
-            git commit -m "Update data.csv"
+            git add data.csv site/index.html
+            git commit -m "Update data.csv and dashboard"
             git push
           else
             echo "No changes to commit."

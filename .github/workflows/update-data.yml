@@ -36,10 +36,10 @@ jobs:
 
       - name: Commit updated data
         run: |
-          if git status --porcelain data.csv site/index.html | grep -q .; then
+          if git status --porcelain data.csv docs/index.html | grep -q .; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add data.csv site/index.html
+            git add data.csv docs/index.html
             git commit -m "Update data.csv and dashboard"
             git push
           else

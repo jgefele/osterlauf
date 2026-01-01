@@ -12,54 +12,87 @@ OUTPUT_PATH = Path("docs/index.html")
 
 def load_series(path: Path):
     timestamps = []
-    values = []
+    total_values = []
+    rueweler_values = []
     with path.open(newline="") as handle:
         reader = csv.reader(handle)
         for row in reader:
             if not row:
                 continue
             timestamp = datetime.fromisoformat(row[0])
-            value = float(row[1])
+            total_value = float(row[1])
+            rueweler_value = None
+            if len(row) >= 3 and row[2].strip():
+                try:
+                    rueweler_value = float(row[2])
+                except ValueError:
+                    rueweler_value = None
             timestamps.append(timestamp)
-            values.append(value)
+            total_values.append(total_value)
+            rueweler_values.append(rueweler_value)
     if not timestamps:
         raise ValueError("data.csv enthält keine Daten")
-    pairs = sorted(zip(timestamps, values), key=lambda item: item[0])
-    return [item[0] for item in pairs], [item[1] for item in pairs]
+    pairs = sorted(
+        zip(timestamps, total_values, rueweler_values), key=lambda item: item[0]
+    )
+    return (
+        [item[0] for item in pairs],
+        [item[1] for item in pairs],
+        [item[2] for item in pairs],
+    )
 
 
-def build_svg(timestamps, values) -> str:
+def build_svg(timestamps, total_values, rueweler_values) -> str:
+    traces = [
+        go.Scatter(
+            x=timestamps,
+            y=total_values,
+            mode="lines",
+            name="Anmeldungen gesamt",
+            line=dict(color="#4f46e5", width=3),
+            hovertemplate="%{x|%d.%m.%Y %H:%M}<br>Gesamt: %{y}<extra></extra>",
+        )
+    ]
+
+    rueweler_trace = go.Scatter(
+        x=timestamps,
+        y=rueweler_values,
+        mode="lines",
+        name="Nachname Rüweler",
+        line=dict(color="#f97316", width=3),
+        hovertemplate="%{x|%d.%m.%Y %H:%M}<br>Rüweler: %{y}<extra></extra>",
+        connectgaps=False,
+    )
+    traces.append(rueweler_trace)
+
     fig = go.Figure(
-        data=[
-            go.Scatter(
-                x=timestamps,
-                y=values,
-                mode="lines",
-                line=dict(color="#4f46e5", width=3),
-                hovertemplate="%{x|%d.%m.%Y %H:%M}<br>Wert: %{y}<extra></extra>",
-            )
-        ]
+        data=traces
     )
     fig.update_layout(
         margin=dict(l=40, r=20, t=10, b=40),
         paper_bgcolor="white",
         plot_bgcolor="white",
         height=420,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     fig.update_xaxes(showgrid=False, title_text="Zeit")
-    fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb", title_text="Wert")
+    fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb", title_text="Anzahl")
 
     try:
         svg_bytes = pio.to_image(fig, format="svg")
-    except RuntimeError as exc:
-        if "requires Google Chrome" not in str(exc) and "requires Chrome" not in str(exc):
-            raise
-        kaleido.get_chrome_sync()
-        svg_bytes = pio.to_image(fig, format="svg")
-    return svg_bytes.decode("utf-8")
+        return svg_bytes.decode("utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(
+            "Kaleido konnte kein SVG rendern, weiche auf Plotly.js aus:",
+            exc,
+        )
+        return pio.to_html(
+            fig, include_plotlyjs="cdn", full_html=False, config={"displaylogo": False}
+        )
 
 
-def build_html(current_value: float, svg: str) -> str:
+def build_html(total_current: float, rueweler_current: float | None, svg: str) -> str:
+    rueweler_display = "–" if rueweler_current is None else int(round(rueweler_current))
     return f"""<!DOCTYPE html>
 <html lang=\"de\">
 <head>
@@ -88,23 +121,38 @@ def build_html(current_value: float, svg: str) -> str:
       flex-direction: column;
       gap: 24px;
     }}
+    .value-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }}
     .value-card {{
-      background: linear-gradient(135deg, #4f46e5, #6366f1);
-      border-radius: 20px;
+      border-radius: 18px;
       color: white;
-      padding: 28px;
-      text-align: center;
+      padding: 24px 24px 20px;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }}
     .value-card h1 {{
       margin: 0;
-      font-size: clamp(2.4rem, 4vw, 3.6rem);
+      font-size: clamp(2.2rem, 3vw, 3.4rem);
       font-weight: 700;
-      letter-spacing: 0.03em;
+      letter-spacing: 0.02em;
     }}
     .value-card p {{
-      margin: 8px 0 0;
-      opacity: 0.85;
+      margin: 0;
+      opacity: 0.9;
       font-size: 0.95rem;
+    }}
+    .value-card.total {{
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      box-shadow: 0 16px 40px rgba(99, 102, 241, 0.3);
+    }}
+    .value-card.rueweler {{
+      background: linear-gradient(135deg, #f97316, #fb923c);
+      box-shadow: 0 16px 40px rgba(249, 115, 22, 0.25);
     }}
     .chart-card {{
       background: #f9fafb;
@@ -129,9 +177,15 @@ def build_html(current_value: float, svg: str) -> str:
 </head>
 <body>
   <main class=\"dashboard\">
-    <section class=\"value-card\">
-      <h1>{int(round(current_value))}</h1>
-      <p>Anmeldungen</p>
+    <section class=\"value-grid\">
+      <article class=\"value-card total\">
+        <p>Gesamt angemeldet</p>
+        <h1>{int(round(total_current))}</h1>
+      </article>
+      <article class=\"value-card rueweler\">
+        <p>Nachname „Rüweler“</p>
+        <h1>{rueweler_display}</h1>
+      </article>
     </section>
     <section class=\"chart-card\">
       {svg}
@@ -143,9 +197,9 @@ def build_html(current_value: float, svg: str) -> str:
 
 
 def main() -> None:
-    timestamps, values = load_series(DATA_PATH)
-    svg = build_svg(timestamps, values)
-    html = build_html(values[-1], svg)
+    timestamps, totals, ruewelers = load_series(DATA_PATH)
+    svg = build_svg(timestamps, totals, ruewelers)
+    html = build_html(totals[-1], ruewelers[-1], svg)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html, encoding="utf-8")
     print(f"HTML geschrieben nach {OUTPUT_PATH}")

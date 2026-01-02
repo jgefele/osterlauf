@@ -13,6 +13,7 @@ OUTPUT_PATH = Path("docs/index.html")
 def load_series(path: Path):
     timestamps = []
     total_values = []
+    rueweler_values: list[float | None] = []
     with path.open(newline="") as handle:
         reader = csv.reader(handle)
         for row in reader:
@@ -20,14 +21,25 @@ def load_series(path: Path):
                 continue
             timestamp = datetime.fromisoformat(row[0])
             total_value = float(row[1])
+            rueweler_value: float | None = None
+            if len(row) >= 3 and row[2].strip():
+                try:
+                    rueweler_value = float(row[2])
+                except ValueError:
+                    rueweler_value = None
             timestamps.append(timestamp)
             total_values.append(total_value)
+            rueweler_values.append(rueweler_value)
     if not timestamps:
         raise ValueError("data.csv enthält keine Daten")
     pairs = sorted(
-        zip(timestamps, total_values), key=lambda item: item[0]
+        zip(timestamps, total_values, rueweler_values), key=lambda item: item[0]
     )
-    return ([item[0] for item in pairs], [item[1] for item in pairs])
+    return (
+        [item[0] for item in pairs],
+        [item[1] for item in pairs],
+        [item[2] for item in pairs],
+    )
 
 
 def build_svg(timestamps, total_values) -> str:
@@ -66,7 +78,7 @@ def build_svg(timestamps, total_values) -> str:
         )
 
 
-def build_html(total_current: float, svg: str) -> str:
+def build_html(total_current: float, rueweler_current: float, svg: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang=\"de\">
 <head>
@@ -124,6 +136,10 @@ def build_html(total_current: float, svg: str) -> str:
       background: linear-gradient(135deg, #4f46e5, #6366f1);
       box-shadow: 0 16px 40px rgba(99, 102, 241, 0.3);
     }}
+    .value-card.rueweler {{
+      background: linear-gradient(135deg, #10b981, #34d399);
+      box-shadow: 0 16px 40px rgba(52, 211, 153, 0.28);
+    }}
     .chart-card {{
       background: #f9fafb;
       border-radius: 20px;
@@ -152,6 +168,10 @@ def build_html(total_current: float, svg: str) -> str:
         <p>Gesamt angemeldet</p>
         <h1>{int(round(total_current))}</h1>
       </article>
+      <article class=\"value-card rueweler\">
+        <p>Rüweler aktuell</p>
+        <h1>{int(round(rueweler_current))}</h1>
+      </article>
     </section>
     <section class=\"chart-card\">
       {svg}
@@ -163,9 +183,12 @@ def build_html(total_current: float, svg: str) -> str:
 
 
 def main() -> None:
-    timestamps, totals = load_series(DATA_PATH)
+    timestamps, totals, rueweler_counts = load_series(DATA_PATH)
     svg = build_svg(timestamps, totals)
-    html = build_html(totals[-1], svg)
+    rueweler_current = next(
+        (value for value in reversed(rueweler_counts) if value is not None), 0
+    )
+    html = build_html(totals[-1], rueweler_current, svg)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(html, encoding="utf-8")
     print(f"HTML geschrieben nach {OUTPUT_PATH}")
